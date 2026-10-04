@@ -144,3 +144,6 @@ venv/
 !results/**/*.png
 !results/**/*.log.gz
 !results/**/*.md
+
+# PID file written by msft_runs_ctl.sh while runs are paused
+.msft_run_pids
