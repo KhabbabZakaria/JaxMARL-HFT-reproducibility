@@ -10,7 +10,7 @@ of it* largely do not. Across four seeds of an otherwise byte-identical configur
 the execution agent's end-of-episode shortfall varies by **6×** (21 to 129 units of a
 600-unit task), and a 10× change to the entropy coefficient moves the reward less than
 one fifth as much as changing the seed alone. Separately, switching the traded ticker
-from large-tick to small-tick names takes the market maker from roughly +45,000 to
+from small-tick to large-tick names takes the market maker from roughly +45,000 to
 roughly −44 in PnL with no change to code, seed, or hyperparameters.
 
 This repository contains the runs, the extracted metrics, the analysis code, and the
@@ -129,7 +129,8 @@ the market maker held at 0.01), on a fixed seed:
 
 Two things follow. First, **the 10× entropy sweep moves reward by 0.26, while the seed
 alone moves it by 1.20** — the hyperparameter effect is 0.22× the noise it would have to
-clear to be reported as real. Second, and more interesting, the run with the *worst*
+clear to be reported as real — and each entropy setting is itself n=1, run on seed 7 only,
+so the 0.26 is a single draw from a distribution at least that wide. Second, and more interesting, the run with the *worst*
 reward (0.10) has the *best* task completion. Reward and shortfall rank the runs in
 opposite orders, so which hyperparameter you call "best" depends on which metric you
 report, and the reward is the one the agent is optimising.
@@ -166,9 +167,18 @@ deep inside the spread and takes queue priority immediately. On MSFT, whose spre
 the one-tick minimum three quarters of the time, three ticks from mid is *behind* the
 touch, and the quote essentially never fills.
 
-So the configuration is not a neutral default — it is implicitly specialised to large-tick,
+Measured against this study's own yardstick, the ticker effect is **2.1× the seed spread**
+in MM PnL (45,403 against 21,363), where the entropy sweep was 0.22× the seed spread in EXE
+reward. The comparison is single-seed, which is the error this study criticises elsewhere,
+but the gap is large enough and the mechanism concrete enough to carry it.
+
+The execution agent is unaffected: on INTC/MSFT it reaches **96.4% fill**, within a tenth of
+a point of the best run in the study (96.5%, seed 2 on the small-tick set). The large-tick
+data is not the problem; the market maker's tick-relative quote placement is.
+
+So the configuration is not a neutral default — it is implicitly specialised to small-tick,
 high-priced names. A result demonstrated on AAPL/AMZN/GOOG says little about the same
-agent on the small-tick names that make up most of the market. (INTC's level-1 book file
+agent on the large-tick names that make up most of the market. (INTC's level-1 book file
 was not retained locally, so the regime table measures MSFT directly; INTC traded near $26
 in 2012 and sits in the same tick-constrained regime.)
 
@@ -195,6 +205,12 @@ Stated plainly, because they bound every claim above.
   plausibly as large as seed variation.
 - **Four seeds** for the variance estimate. Enough to show the spread is large; not enough
   for a confidence interval, and the std values above should be read as indicative.
+- **Reward magnitudes are not comparable across ticker sets.** EXE reward is −0.28 on
+  INTC/MSFT against −2.5 to −3.7 on AAPL/AMZN/GOOG, which reflects price scale rather than
+  performance. Fill rate is the comparable metric, and by it the two sets are level.
+- **One run per condition** for the entropy and ticker comparisons (n=1), against four seeds
+  for the variance estimate. Those two findings therefore rest on effect sizes and mechanism,
+  not on repetition.
 - **No baseline comparison.** `Calculate Baseline` was off, so the execution agent is not
   scored against TWAP or an immediate-execution benchmark. Shortfall is reported as a
   task-completion proxy, not as evidence of economic performance.
