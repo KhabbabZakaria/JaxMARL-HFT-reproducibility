@@ -81,8 +81,8 @@ order, *and* the episode-window draw — a full end-to-end seed change, not just
 two runs were given 10⁷ steps and the rest 4×10⁶. Comparing final values across unequal
 budgets would confound seed with training length; this is the single most important
 methodological choice in the analysis and it changes the headline numbers substantially.
-Where a figure plots a longer run in full, a dotted line marks update 975 so the measurement
-point stays visible.
+Figures are truncated to the same 975 updates, so what a figure shows is what the
+accompanying table measures.
 
 ---
 
@@ -154,10 +154,8 @@ Same code, same seed, same calendar day, same budget — only the ticker set cha
 | INTC, MSFT | −0.00002 | **−44** | +0.01 |
 
 The market maker is simply inert on INTC/MSFT: near-zero inventory, near-zero PnL, a flat
-reward curve. These two runs are the same length as each other, so the figure plots them in
-full and the dotted line marks the 975-update budget the table values come from; the gap is
-present throughout and does not depend on where it is measured. Measuring the raw book
-explains why:
+reward curve. Both runs in fact continued to 2,440 updates with the gap unchanged, so it
+does not depend on where it is measured. Measuring the raw book explains why:
 
 | Ticker | Median mid | Median spread | Share of time at a 1-tick spread |
 |---|---:|---:|---:|
@@ -166,11 +164,22 @@ explains why:
 | GOOG | $569.88 | 28 ticks | 0.1% |
 | MSFT | $30.77 | **1 tick** | **75.8%** |
 
-The agent quotes a *fixed number of ticks* from mid (`spread_multiplier=3.0`,
-`multiplier_type='tick'`). On GOOG, whose book is 28 ticks wide, three ticks from mid is
-deep inside the spread and takes queue priority immediately. On MSFT, whose spread is at
-the one-tick minimum three quarters of the time, three ticks from mid is *behind* the
-touch, and the quote essentially never fills.
+| Ticker | Median depth at the touch |
+|---|---:|
+| AAPL | 100 shares |
+| AMZN | 100 shares |
+| GOOG | 100 shares |
+| MSFT | **10,907 shares** |
+
+Two things close the gap, and they compound. The agent quotes a *fixed number of ticks* from
+mid (`spread_multiplier=3.0`, `multiplier_type='tick'`). On GOOG, whose book is 28 ticks
+wide, three ticks from mid is deep inside the spread and takes queue priority immediately.
+On MSFT, whose spread is at the one-tick minimum three quarters of the time, there is no
+room inside the spread to quote into at all. And the only remaining option — joining the
+touch — puts the agent's **one-share** order (`fixed_quant_value=1`) behind a median of
+10,907 shares already queued at that price, against 100 on the small-tick names. It
+essentially never reaches the front, so it essentially never fills: peak absolute inventory
+across the entire 2,440-update run was **0.22 shares**.
 
 Measured against this study's own yardstick, the ticker effect is **2.1× the seed spread**
 in MM PnL (45,403 against 21,363), where the entropy sweep was 0.22× the seed spread in EXE

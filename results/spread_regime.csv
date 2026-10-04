@@ -1,5 +1,5 @@
-ticker,period,median_mid_usd,median_spread_ticks,mean_spread_ticks,pct_spread_at_one_tick,n_rows
-AAPL,2012,583.25,15.0,15.36,0.5,400000
-AMZN,2012,222.66,13.0,13.09,0.6,269748
-GOOG,2012,569.88,28.0,29.62,0.1,147916
-MSFT,2012,30.77,1.0,1.24,75.8,400000
+ticker,period,median_mid_usd,median_spread_ticks,mean_spread_ticks,pct_spread_at_one_tick,median_touch_depth_shares,mean_touch_depth_shares,p90_touch_depth_shares,n_rows
+AAPL,2012,583.25,15.0,15.36,0.5,100,161,300,400000
+AMZN,2012,222.66,13.0,13.09,0.6,100,192,332,269748
+GOOG,2012,569.88,28.0,29.62,0.1,100,145,300,147916
+MSFT,2012,30.77,1.0,1.24,75.8,10907,11748,20446,400000

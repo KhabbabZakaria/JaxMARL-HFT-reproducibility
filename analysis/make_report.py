@@ -162,26 +162,22 @@ def main():
     fig.suptitle("Reward and task completion rank the same runs differently")
     fig.tight_layout(); fig.savefig(FIG / "entropy_sweep.png", dpi=140); plt.close(fig)
 
-    # Both runs in this comparison are the same length (1e7 steps), so the full
-    # curve is shown rather than truncated -- but the reported table values come
-    # from the common 975-update budget like every other number in the study, so
-    # mark where they are measured instead of leaving the reader to guess.
+    # Truncated at BUDGET like every other comparison, so what the figure shows is
+    # exactly what the table measures. Both runs continue to 2,440 updates with the
+    # gap unchanged; that is stated in the text rather than drawn, because a curve
+    # extending past the measurement point invites the reader to read values off it
+    # that no table reports.
     fig, ax = plt.subplots(1, 2, figsize=(12, 4.2))
     for r, c in (("run_AAPL_AMZN_GOOG", "tab:blue"), ("run_INTC_MSFT", "tab:orange")):
-        df = load(r, 2440)
+        df = load(r)
         ax[0].plot(df["update"], smooth(df["reward_mm"]), c=c, label=RUNS[r][3], lw=1.3)
         ax[1].plot(df["update"], smooth(df["mm_pnl"]), c=c, label=RUNS[r][3], lw=1.3)
     ax[0].set_ylabel("market-making reward"); ax[1].set_ylabel("market-making PnL (ticks)")
     ax[0].set_title("Reward"); ax[1].set_title("PnL")
     for a in ax:
-        a.axvline(BUDGET, ls=":", c="k", lw=1)
-        a.set_xlabel("update"); a.grid(alpha=.3)
-    ax[0].annotate("reported values\nmeasured here", xy=(BUDGET, 0.02),
-                   xytext=(BUDGET + 170, 0.012), fontsize=7,
-                   arrowprops=dict(arrowstyle="->", lw=.8))
-    ax[0].legend(fontsize=8, loc="center right"); ax[1].legend(fontsize=8)
+        a.set_xlabel("update"); a.legend(fontsize=8); a.grid(alpha=.3)
     fig.suptitle("Same code, same seed, same day — two ticker sets "
-                 "(full 1e7-step runs; dotted line = the 975-update budget used in the tables)")
+                 "(first 975 updates, the budget every reported number uses)")
     fig.tight_layout(); fig.savefig(FIG / "ticker_regime.png", dpi=140); plt.close(fig)
 
     print(f"\nfigures -> {FIG}")
