@@ -1,5 +1,8 @@
 # JAX
-jax[cuda12]
+# CUDA wheels are published for Linux only. On macOS (and any other
+# non-Linux platform) install plain JAX, which uses the CPU backend.
+jax[cuda12]; sys_platform == "linux"
+jax; sys_platform != "linux"
 optax
 flax
 chex

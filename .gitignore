@@ -47,8 +47,7 @@ results_file**
 *.npy
 *.nfs*
 
-Dockerfile
-Dockerfile_twogymnax_exchange/jaxrl/pre_trained_weights/*.model
+gymnax_exchange/jaxrl/pre_trained_weights/*.model
 tensorboard_logs/
 tensorboard_logs/**
 
@@ -113,3 +112,35 @@ debug_output/*
 jax_trace/*
 .ipython/*
 baseline_sweep_results/*
+checkpoints/*
+pre_reset_states/*
+wandb/*
+venv/
+
+# ---------------------------------------------------------------------------
+# Reproducibility study additions
+# ---------------------------------------------------------------------------
+
+# Local machine paths and secrets. .env.example is the committed template.
+.env
+!.env.example
+
+# Environments and caches
+.venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Raw training logs land at the repo root; the curated, compressed copies that
+# back the reported numbers live in results/raw_logs/ and are committed instead.
+/run_*.log
+
+# results/ holds the study's evidence. The global **.csv, *.png and **.log rules
+# above would swallow all of it, so re-admit it explicitly. Keep these negations
+# last: in .gitignore, the final matching pattern wins.
+!results/
+!results/**/*.csv
+!results/**/*.png
+!results/**/*.log.gz
+!results/**/*.md

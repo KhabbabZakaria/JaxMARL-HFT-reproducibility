@@ -1,178 +1,296 @@
-# JaxMARL-HFT: GPU-Accelerated Multi-Agent Reinforcement Learning for High-Frequency Trading
+# A Reproducibility Study of Multi-Agent RL for High-Frequency Trading
 
-A JAX-based framework for multi-agent reinforcement learning for high-frequency trading, based on the [JAX-LOB simulator](https://github.com/KangOxford/jax-lob) and an extension of [JaxMARL](https://github.com/FLAIROx/JaxMARL) to the financial trading domain.
+Independent reproduction and robustness analysis of [JaxMARL-HFT](https://github.com/vmohl/JaxMARL-HFT),
+a GPU-accelerated multi-agent RL framework in which a market-making agent and an
+execution agent learn simultaneously inside a limit-order-book simulator driven by
+real LOBSTER message data.
 
-## Key Features
+The framework reproduces. The *conclusions one would draw from a single training run
+of it* largely do not. Across four seeds of an otherwise byte-identical configuration,
+the execution agent's end-of-episode shortfall varies by **6×** (21 to 129 units of a
+600-unit task), and a 10× change to the entropy coefficient moves the reward less than
+one fifth as much as changing the seed alone. Separately, switching the traded ticker
+from large-tick to small-tick names takes the market maker from roughly +45,000 to
+roughly −44 in PnL with no change to code, seed, or hyperparameters.
 
-- **GPU-Accelerated**: Built on JAX for high-performance parallel computation with JIT compilation
-- **Two levels of Parallelization**: Parallel processing across episodes and agent types using `vmap`
-- **Multi-Agent RL**: Supports market making, execution, and directional trading agents
-- **LOBSTER Data Integration**: Real market data support with efficient GPU memory usage
-- **Scalable**: Handles thousands of parallel environments
-- **Heterogeneous Agents**: Supports different observation/action spaces
+This repository contains the runs, the extracted metrics, the analysis code, and the
+figures behind those numbers.
 
-## Getting Started
+---
 
-### 1. Clone and install
+## Contents
+
+| Path | What it is |
+|---|---|
+| [`analysis/`](analysis/) | Log parsing, matched-budget tables, figures, spread analysis |
+| [`results/metrics/`](results/metrics/) | Per-update metrics for every run, one tidy CSV each |
+| [`results/raw_logs/`](results/raw_logs/) | The original training stdout, gzipped — the primary evidence ([one substitution](#a-note-on-the-raw-logs)) |
+| [`results/figures/`](results/figures/) | The four figures below |
+| [`results/summary_matched.csv`](results/summary_matched.csv) | Converged metrics, all runs truncated to a common budget |
+| [`results/seed_variance.csv`](results/seed_variance.csv) | Spread statistics across seeds |
+| [`results/spread_regime.csv`](results/spread_regime.csv) | Measured spread regime per ticker |
+| [`UPSTREAM_README.md`](UPSTREAM_README.md) | The original project's documentation (install, configs, agent types) |
+| [`.env.example`](.env.example) | Template for the machine-specific paths (copy to `.env`) |
+
+---
+
+## Background
+
+Henderson et al., *Deep Reinforcement Learning that Matters* (2018), showed that
+reported differences between deep RL methods are routinely smaller than the variance
+induced by the random seed, and that papers reporting a small number of runs can
+therefore support conclusions the data does not. That critique is now standard for
+benchmark control tasks.
+
+Financial RL is a harder case for a reason that has nothing to do with the algorithm.
+A MuJoCo environment is a fixed, stationary, infinitely resampleable simulator. A
+limit-order-book environment is a replay of a particular set of trading days for a
+particular set of tickers, and both of those choices change the task, not just the
+noise. So the question this study asks is:
+
+> **If you reproduce a multi-agent LOB-RL result and then vary only the things a paper
+> usually does not report — the seed, the entropy coefficient, the ticker — how much of
+> the result survives?**
+
+## Experimental setup
+
+Two agents trained jointly with IPPO (independent PPO, recurrent, separate networks and
+separate hyperparameters per agent type):
+
+- **Market maker (MM)** — posts a two-sided quote. Action space `fixed_quants`, reward
+  `spooner_asym_damped2`, quoting `spread_multiplier=3.0` ticks from mid, no inventory penalty.
+- **Execution agent (EXE)** — must execute a 600-unit parent order within the episode,
+  direction drawn at random each episode. Action space `fixed_quants_complex` (13 actions),
+  reward `normal`, `reward_lambda=0.1`. Whatever is unexecuted when the episode ends is
+  force-liquidated at a penalised price ("doom" liquidation).
+
+| | |
+|---|---|
+| Data | LOBSTER level-10, 2012-06-21, one full session (09:30–16:00) per ticker |
+| Episode | 64 steps, 100 messages per step, episode starts every 64 s of session time |
+| Rollout | 64 parallel envs × 64 steps |
+| Budget | 4×10⁶ steps (975 updates) for the controlled comparisons; 10⁷ for two exploratory runs |
+| Hardware | CPU-only (Apple silicon, single device) |
+
+Seven runs in total: four seeds (2, 7, 13, 42) on `AAPL,AMZN,GOOG`; two entropy variants
+on seed 7; one ticker variant (`INTC,MSFT`). `SEED` propagates to both the learner PRNG
+and `world_config.seed`, so a seed change varies network init, action sampling, minibatch
+order, *and* the episode-window draw — a full end-to-end seed change, not just a weight init.
+
+**All comparisons below truncate every run to its first 975 updates**, because two runs were
+given 10⁷ steps and the rest 4×10⁶. Comparing final values across unequal budgets would
+confound seed with training length; this is the single most important methodological choice
+in the analysis and it changes the headline numbers substantially.
+
+---
+
+## Results
+
+### 1. The framework reproduces
+
+Both agents learn. The market maker goes from negative to positive reward within ~100
+updates and holds it; the execution agent improves steadily, and its shortfall — which
+peaks near 240 units early in training, as the policy first learns caution — falls back to
+between 21 and 129 units depending on seed. Nothing here contradicts
+the upstream work — the simulator, the training loop and the multi-agent setup all do what
+they claim.
+
+### 2. Seed variance swamps the effects a single run would report
+
+Four seeds, identical configuration, identical budget. Metrics are means over the final
+10% of updates:
+
+![Seed variance](results/figures/seed_variance.png)
+
+| Metric | Mean | Std | Min | Max | Spread as % of mean |
+|---|---:|---:|---:|---:|---:|
+| MM reward | 0.0396 | 0.0073 | 0.0333 | 0.0499 | **42%** |
+| EXE reward | −3.158 | 0.496 | −3.705 | −2.507 | **38%** |
+| EXE units unfilled | 78.4 | 45.2 | 21.2 | 128.6 | **137%** |
+| MM PnL | 57,149 | 8,816 | 45,358 | 66,721 | **37%** |
+| MM inventory | −1.25 | 0.16 | −1.42 | −1.03 | 31% |
+
+The execution shortfall — arguably *the* metric for an execution agent — ranges over a
+factor of six across seeds. A paper reporting seed 2 would describe an agent that nearly
+completes its task (96% filled); the same code on seed 7 completes 79%.
+
+### 3. Reward and task completion rank the runs in opposite directions
+
+The entropy coefficient was raised on the execution agent only (`ENT_COEF=[0.01, X]`,
+the market maker held at 0.01), on a fixed seed:
+
+![Entropy sweep](results/figures/entropy_sweep.png)
+
+| `ENT_COEF` (EXE) | EXE reward | Units unfilled | Fill rate |
+|---|---:|---:|---:|
+| 0.01 | −3.705 | 129 | 78.6% |
+| 0.05 | −3.578 | 84 | 86.0% |
+| 0.10 | −3.840 | **57** | **90.5%** |
+
+Two things follow. First, **the 10× entropy sweep moves reward by 0.26, while the seed
+alone moves it by 1.20** — the hyperparameter effect is 0.22× the noise it would have to
+clear to be reported as real. Second, and more interesting, the run with the *worst*
+reward (0.10) has the *best* task completion. Reward and shortfall rank the runs in
+opposite orders, so which hyperparameter you call "best" depends on which metric you
+report, and the reward is the one the agent is optimising.
+
+The execution agent also concentrates: by the end of training 18–34% of all steps take a
+single discrete action out of 13, varying by seed (right panel below).
+
+![Execution behaviour](results/figures/execution_behaviour.png)
+
+### 4. The ticker is a bigger lever than any hyperparameter tested
+
+Same code, same seed, same calendar day, same budget — only the ticker set changes:
+
+![Ticker regime](results/figures/ticker_regime.png)
+
+| Tickers | MM reward | MM PnL | MM inventory |
+|---|---:|---:|---:|
+| AAPL, AMZN, GOOG | +0.0499 | **+45,358** | −1.03 |
+| INTC, MSFT | −0.00002 | **−44** | +0.01 |
+
+The market maker is simply inert on INTC/MSFT: near-zero inventory, near-zero PnL, a flat
+reward curve. Measuring the raw book explains why:
+
+| Ticker | Median mid | Median spread | Share of time at a 1-tick spread |
+|---|---:|---:|---:|
+| AAPL | $583.25 | 15 ticks | 0.5% |
+| AMZN | $222.66 | 13 ticks | 0.6% |
+| GOOG | $569.88 | 28 ticks | 0.1% |
+| MSFT | $30.77 | **1 tick** | **75.8%** |
+
+The agent quotes a *fixed number of ticks* from mid (`spread_multiplier=3.0`,
+`multiplier_type='tick'`). On GOOG, whose book is 28 ticks wide, three ticks from mid is
+deep inside the spread and takes queue priority immediately. On MSFT, whose spread is at
+the one-tick minimum three quarters of the time, three ticks from mid is *behind* the
+touch, and the quote essentially never fills.
+
+So the configuration is not a neutral default — it is implicitly specialised to large-tick,
+high-priced names. A result demonstrated on AAPL/AMZN/GOOG says little about the same
+agent on the small-tick names that make up most of the market. (INTC's level-1 book file
+was not retained locally, so the regime table measures MSFT directly; INTC traded near $26
+in 2012 and sits in the same tick-constrained regime.)
+
+---
+
+## What this adds up to
+
+1. **Report seeds.** On this task, three to five seeds is a floor, not a nicety. Single-run
+   numbers here carry spreads of 40–140%.
+2. **Report task metrics, not only reward.** Shortfall and reward disagreed about which
+   configuration was best. Reward alone would have selected the worse-executing agent.
+3. **Treat the instrument as a hyperparameter.** Ticker choice dominated every algorithmic
+   knob tested, through a concrete and checkable mechanism (tick-relative quote placement).
+   LOB-RL results should state the tick regime they were obtained in.
+4. **Henderson et al.'s critique transfers, and tightens.** The seed problem is the same;
+   the data-selection problem is additional, and specific to environments replayed from
+   recorded markets.
+
+## Limitations
+
+Stated plainly, because they bound every claim above.
+
+- **One trading day** (2012-06-21) per ticker. Day-to-day variation is not measured and is
+  plausibly as large as seed variation.
+- **Four seeds** for the variance estimate. Enough to show the spread is large; not enough
+  for a confidence interval, and the std values above should be read as indicative.
+- **No baseline comparison.** `Calculate Baseline` was off, so the execution agent is not
+  scored against TWAP or an immediate-execution benchmark. Shortfall is reported as a
+  task-completion proxy, not as evidence of economic performance.
+- **CPU-only, small networks** (GRU 64, FC 64, 64 envs) versus the upstream GPU defaults
+  (256/256, 4096 envs). Conclusions about *variance* should hold; absolute performance is
+  not comparable to a full-scale run.
+- **Shortfall is derived, not logged directly.** `doom_quant` is logged as a mean over all
+  rollout steps but is non-zero only on an episode's terminal step, so units-unfilled is
+  recovered as `mean(doom_quant) × 64`. This assumes one episode boundary per 64-step
+  rollout, which holds for `ep_type=fixed_steps` with `episode_time=64`. The derivation is
+  in [`analysis/extract_metrics.py`](analysis/extract_metrics.py) and the raw means are in
+  the per-run CSVs.
+- **`market_share` logged NaN on every update**, since it divides by a traded volume that is
+  zero on many steps. The MM's fill-rate evidence therefore comes from inventory and PnL
+  rather than from direct volume capture.
+
+## Reproducing
+
+The analysis runs on the committed logs, with no LOBSTER data and no GPU:
 
 ```bash
-conda create -n jaxmarl_hft python=3.10
-conda activate jaxmarl_hft
-pip install "jax[cuda12]"
-pip install -r requirements.txt
+pip install pandas matplotlib
+python analysis/extract_metrics.py     # results/raw_logs/*.gz -> results/metrics/*.csv
+python analysis/make_report.py         # -> summary_matched.csv, seed_variance.csv, figures/
 ```
 
-Requires Python 3.8+ and a CUDA-capable GPU.
+`analysis/spread_regime.py` additionally needs the raw LOBSTER books; its output is
+committed as `results/spread_regime.csv` so the finding is readable without them.
 
-### 2. Get LOBSTER data
+### A note on the raw logs
 
-You need [LOBSTER](https://data.lobsterdata.com/info/WhatIsLOBSTER.php) limit order book data. Each trading day needs a matched pair of `message` and `orderbook` CSV files.
+The archived logs are the unmodified stdout of each training run, with one exception: the
+absolute path of the machine they were produced on has been replaced by the literal string
+`${JAXMARL_HFT_ROOT}`, the same placeholder the env configs now use. It appears 13–14 times
+per log, all inside the configuration block the trainer echoes at startup
+(`dataPath=`, `datapaths considered are [...]`, the checkpoint directory, and the
+`saved_npz/` and `pre_reset_states/` cache paths).
 
-Create the following directory structure inside the repo (or anywhere — you'll point to it in the config):
+The substitution is a pure prefix replacement and touches no line that the analysis reads —
+`extract_metrics.py` parses only the `avg_reward_*` and `[MM]`/`[EXE]` lines. This was
+verified by checksumming every file in `results/metrics/` plus the summary tables before and
+after the edit: all ten are byte-identical. Run the two commands above against these logs and
+you will reproduce the numbers in this README exactly.
 
-```
-data/rawLOBSTER/<STOCK>/<TIME_PERIOD>/
-├── <STOCK>_<DATE>_34200000_57600000_message_10.csv
-└── <STOCK>_<DATE>_34200000_57600000_orderbook_10.csv
-```
-
-For example, for GOOG data from 2022:
-```
-data/rawLOBSTER/GOOG/2022/
-├── GOOG_2022-01-03_34200000_57600000_message_10.csv
-├── GOOG_2022-01-03_34200000_57600000_orderbook_10.csv
-└── ...
-```
-
-### 3. Edit the environment config
-
-Pick an environment config from `config/env_configs/` (recommended starting point: `2_player_fq_fqc.json` for multi-agent market making + execution) and set these fields in the `world_config` section:
-
-```json
-"alphatradePath": "/absolute/path/to/JaxMARL-HFT",
-"dataPath": "/absolute/path/to/JaxMARL-HFT/data",
-"stock": "GOOG",
-"timePeriod": "2022"
-```
-
-`alphatradePath` is the repo root (used for caching and checkpoints), `dataPath` is the parent of `rawLOBSTER/`, `stock` matches your data folder name, and `timePeriod` is the subfolder under `rawLOBSTER/<stock>/`.
-
-Also set `TimePeriod` in your training config (`config/rl_configs/*.yaml`) to match.
-
-### 4. Run training
+To regenerate the training runs, follow the install and data setup in
+[`UPSTREAM_README.md`](UPSTREAM_README.md). Point the code at your checkout and your
+LOBSTER data by copying the template:
 
 ```bash
-export PYTHONPATH="$(pwd):$PYTHONPATH"
-
-# Multi-agent (market making + execution)
-python3 gymnax_exchange/jaxrl/MARL/ippo_rnn_JAXMARL.py \
-    --config-name="ippo_rnn_JAXMARL_2player" \
-    WANDB_MODE="disabled"
+cp .env.example .env     # then edit JAXMARL_HFT_ROOT / JAXMARL_HFT_DATA
 ```
 
-The first run preprocesses the LOBSTER data and caches it. Subsequent runs are much faster. Additional training configs are in `config/rl_configs/`. You can override any config value from the command line using [Hydra](https://hydra.cc/) syntax (e.g. `TOTAL_TIMESTEPS=50000 NUM_ENVS=64`).
-
-### 5. WandB (optional)
-
-To enable [Weights & Biases](https://wandb.ai/) experiment tracking, run `wandb login` and then add `WANDB_MODE="online" ENTITY="your-wandb-entity" PROJECT="your-project-name"` to the training command. These can also be set directly in the YAML configs (`config/rl_configs/*.yaml`). The YAML configs support [WandB sweeps](https://docs.wandb.ai/guides/sweeps) — when a `SWEEP_PARAMETERS` section is present and `WANDB_MODE` is not `"disabled"`, training automatically creates a sweep.
-
-## Docker Setup (alternative)
-
-For **x86_64/amd64 only** (base image: `nvcr.io/nvidia/jax`). Edit the `Makefile` to set `DATADIR` to your LOBSTER data directory, then:
+`.env` is gitignored, and both variables are optional — with no `.env` they default to
+`.` and `./data`, which is correct when training is launched from the repo root. A real
+environment variable overrides `.env`, so one-off runs work too
+(`JAXMARL_HFT_DATA=/mnt/lobster ./train_seed.sh 7`). Then:
 
 ```bash
-make build              # build image
-make run                # interactive shell
-make ppo_2player gpu=0  # run training on GPU 0
+./train_seed.sh 7                 # one seed of the controlled comparison
+./train_ent.sh 7 0.05             # entropy variant on the execution agent
+./train_overnight.sh              # the 1e7-step exploratory run
 ```
 
-The repo is mounted at `/home/myuser/` and data at `/home/myuser/data/`, so the default env config paths work without modification. For WandB, set `export WANDB_API_KEY=<your-key>` before running.
+Set the ticker set via `world_config.stock` in `config/env_configs/2_player_fq_fqc.json`
+(comma-separated pools several tickers' windows into one training set).
 
-## Agent Types
+## Changes made to the upstream code
 
-### Market Making Agents
-- **Purpose**: Provide liquidity by posting bid/ask orders
-- **Action Spaces**: Multiple discrete action spaces (spread_skew, fixed_quants, AvSt, directional_trading, simple)
-- **Reward Functions**: Various PnL-based rewards with configurable inventory penalties
+Kept deliberately small, so that the reproduction tests upstream's code rather than a rewrite.
 
-### Execution Agents
-- **Purpose**: Execute large orders with minimal market impact
-- **Action Spaces**: Discrete quantity selection at reference prices (fixed_quants, fixed_prices, complex variants)
-- **Reward Functions**: Slippage-based with configurable end-of-episode penalties
+| File | Change |
+|---|---|
+| `gymnax_exchange/jaxrl/MARL/ippo_rnn_JAXMARL.py` | Per-update stdout summary of each agent's trading behaviour (shortfall, inventory, PnL, action concentration) — the upstream diagnostics only reach Weights & Biases, and these runs were offline. Checkpoint retention changed to pin ~25 snapshots across a run instead of 2. |
+| `requirements.txt` | Made the CUDA wheel Linux-only so the CPU install resolves on macOS. |
+| `gymnax_exchange/jaxen/exec_env.py` | Corrected four action-table comments that read `*3` for a `*5` quantity multiplier. |
+| `gymnax_exchange/jaxob/jaxob_config.py` | Documented that `stock` accepts a comma-separated list (the loader already supported it) and must stay hashable for JIT. |
+| `gymnax_exchange/jaxob/config_io.py` | Env configs may now reference `${VAR}` placeholders, resolved from the environment or a gitignored `.env`, so machine-specific absolute paths stay out of committed configs. |
+| `.gitignore` | Fixed a missing newline that had fused two patterns into one invalid path; added caches and the negations that let `results/` be committed. |
+| `config/`, `train_*.sh` | Experiment configuration for the runs above. |
 
-### Directional Trading
-- **Purpose**: Simple directional trading strategy
-- **Action Spaces**: Bid/ask at best prices or no action
-- **Reward Function**: Portfolio value
-- **Note:** Uses the same class as the market making agent
+No change was made to the environment dynamics, the reward functions, or the IPPO update.
 
-## Repository Structure
+## References
 
-```
-config/
-├── env_configs/          # Environment JSON configurations
-└── rl_configs/           # Training YAML configurations
-gymnax_exchange/
-├── jaxen/                # Environment implementations
-│   ├── marl_env.py       # Multi-agent RL environment
-│   ├── mm_env.py         # Market making (and directional trading) environment
-│   ├── exec_env.py       # Execution environment
-│   └── from_JAXMARL/     # Multi-agent base classes and spaces
-├── jaxrl/                # Reinforcement learning algorithms
-│   └── MARL/             # IPPO implementation and baseline evaluation
-├── jaxob/                # Order book implementation
-├── jaxlobster/           # LOBSTER data integration
-└── utils/                # Shared utilities
-```
+- Mohl, V., et al. *JaxMARL-HFT: GPU-Accelerated Multi-Agent Reinforcement Learning for High-Frequency Trading.* [arXiv:2511.02136](https://arxiv.org/abs/2511.02136) · [ACM ICAIF '25](https://dl.acm.org/doi/full/10.1145/3768292.3770416) · [code](https://github.com/vmohl/JaxMARL-HFT)
+- Henderson, P., Islam, R., Bachman, P., Pineau, J., Precup, D., Meger, D. *Deep Reinforcement Learning that Matters.* [arXiv:1709.06560](https://arxiv.org/abs/1709.06560)
+- Frey, S., et al. *JAX-LOB: A GPU-Accelerated Limit Order Book Simulator.* [code](https://github.com/KangOxford/jax-lob)
+- Rutherford, A., et al. *JaxMARL: Multi-Agent RL Environments in JAX.* [code](https://github.com/FLAIROx/JaxMARL)
 
-## Configuration
+## License and data
 
-The framework uses a comprehensive configuration system with dataclasses for different components:
+This repository is derived from [vmohl/JaxMARL-HFT](https://github.com/vmohl/JaxMARL-HFT)
+and redistributed under the same Apache License 2.0 — see [`LICENSE`](LICENSE). Files modified
+relative to upstream are listed in *Changes made to the upstream code* above; everything not
+listed there is unmodified upstream work by the original authors.
 
-### Core Configuration Classes
-
-- **`MultiAgentConfig`**: Main configuration combining world and agent settings
-- **`World_EnvironmentConfig`**: Global environment parameters (data paths, episode settings, market hours)
-- **`MarketMaking_EnvironmentConfig`**: Market making and directional trading agent configuration (action spaces, reward functions, observation spaces)
-- **`Execution_EnvironmentConfig`**: Execution agent configuration (task types, action spaces, reward parameters)
-
-### Training Configuration
-
-Edit YAML files in `config/rl_configs/` to customize:
-- Number of parallel environments (default: 4096)
-- Training parameters (steps, learning rates, etc.)
-- Agent configurations (action spaces, reward functions)
-- Market data settings (resolution, episode length)
-
-Environment configurations are in `config/env_configs/`.
-
-## Citation
-
-If you use JaxMARL-HFT in your research, please cite:
-
-```bibtex
-@inproceedings{mohl2025jaxmarlhft,
-  title={JaxMARL-HFT: GPU-Accelerated Large-Scale Multi-Agent Reinforcement Learning for High-Frequency Trading},
-  author={Mohl, Valentin and Frey, Sascha and Leyland, Reuben and Li, Kang and Nigmatulin, George and Cucuringu, Mihai and Zohren, Stefan and Foerster, Jakob and Calinescu, Anisoara},
-  booktitle={Proceedings of the 6th ACM International Conference on AI in Finance (ICAIF)},
-  pages={18--26},
-  year={2025},
-  doi={10.1145/3768292.3770416}
-}
-```
-
-## Acknowledgements
-
-JaxMARL-HFT builds on:
-- [JaxMARL](https://github.com/FLAIROx/JaxMARL) — Multi-agent RL environments and algorithms in JAX
-- [JAX-LOB](https://github.com/KangOxford/jax-lob) — GPU-accelerated limit order book simulator
-
-## Disclaimer
-
-This software is provided for **research and educational purposes only**. It is not intended for live trading, financial decision-making, or any form of real-money deployment. The authors and contributors make no warranties regarding the accuracy, reliability, or suitability of this software for any particular purpose.
-
-**The authors assume no responsibility or liability for any financial losses, damages, or other consequences arising from the use of this software.** Use at your own risk.
-
-## License
-
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+LOBSTER market data is licensed and is **not** redistributed here; `data/` is gitignored.
+Obtain it from [LOBSTER](https://lobsterdata.com/) under your own license to rerun training.
+The committed logs, metrics and figures are derived statistics of training runs, not market data.

@@ -894,10 +894,10 @@ class ExecutionAgent():
             [0, 2, 0, 0],  # M*2 quant
             [0, 0, 2, 0],  # NT*2 quant
             [0, 0, 0, 2],  # PP*2 quant
-            [5, 0, 0, 0],  # FT*3 quant
-            [0, 5, 0, 0],  # M*3 quant
-            [0, 0, 5, 0],  # NT*3 quant
-            [0, 0, 0, 5],  # PP*3 quant
+            [5, 0, 0, 0],  # FT*5 quant
+            [0, 5, 0, 0],  # M*5 quant
+            [0, 0, 5, 0],  # NT*5 quant
+            [0, 0, 0, 5],  # PP*5 quant
         ])
         quants=quant_array[action,:]*self.cfg.fixed_quant_value #Get the quant array based on the action
         quants = quants.flatten() #Flatten the array to 1D

@@ -15,6 +15,69 @@ from gymnax_exchange.jaxob.jaxob_config import (
 )
 
 
+# ---------------------------------------------------------------------------
+# .env support
+#
+# Machine-specific absolute paths (where this checkout lives, where the LOBSTER
+# data sits) do not belong in a committed config, so env configs may reference
+# them as ${VAR} and have them resolved at load time. Values come from, in order
+# of precedence: a real environment variable, a line in .env, then the defaults
+# below — so a fresh clone with no .env still works from the repo root.
+# ---------------------------------------------------------------------------
+
+# Repo root, derived from this file's location (gymnax_exchange/jaxob/config_io.py).
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+ENV_DEFAULTS = {
+    "JAXMARL_HFT_ROOT": ".",       # used for checkpoints/ and pre_reset_states/
+    "JAXMARL_HFT_DATA": "./data",  # parent directory of rawLOBSTER/
+}
+
+
+def load_dotenv(path: str = None) -> None:
+    """Read KEY=VALUE lines from .env into os.environ.
+
+    Existing environment variables win, so an inline override such as
+    `JAXMARL_HFT_DATA=/mnt/lobster ./train_seed.sh 7` still takes effect.
+    Looked for in the current directory first, then next to the repo root, so it
+    is found whether or not the caller started from the checkout.
+    """
+    candidates = [path] if path else [".env", os.path.join(_REPO_ROOT, ".env")]
+    for candidate in candidates:
+        if not candidate or not os.path.isfile(candidate):
+            continue
+        with open(candidate) as fh:
+            for raw in fh:
+                line = raw.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, val = line.partition("=")
+                # Strip one layer of matching quotes, as dotenv files commonly use them.
+                val = val.strip()
+                if len(val) >= 2 and val[0] == val[-1] and val[0] in "\"'":
+                    val = val[1:-1]
+                os.environ.setdefault(key.strip(), val)
+        return
+
+
+def _expand_env(value: Any) -> Any:
+    """Expand ${VAR} in a config string, falling back to ENV_DEFAULTS."""
+    if not isinstance(value, str) or "${" not in value:
+        return value
+    for key, default in ENV_DEFAULTS.items():
+        value = value.replace("${" + key + "}", os.environ.get(key) or default)
+    return os.path.expandvars(value)
+
+
+def _expand_env_tree(obj: Any) -> Any:
+    """Apply _expand_env to every string in a nested dict/list structure."""
+    if isinstance(obj, dict):
+        return {k: _expand_env_tree(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_expand_env_tree(v) for v in obj]
+    return _expand_env(obj)
+
+
 def save_config_to_file(config: MultiAgentConfig, filepath: str) -> None:
     """
     Save a MultiAgentConfig instance to a JSON file.
@@ -50,9 +113,14 @@ def load_config_from_file(filepath: str) -> MultiAgentConfig:
     Returns:
         MultiAgentConfig instance loaded from file
     """
+    load_dotenv()
+
     with open(filepath, 'r') as f:
         config_dict = json.load(f)
-    
+
+    # Resolve any ${VAR} placeholders (paths, mainly) before building the dataclasses.
+    config_dict = _expand_env_tree(config_dict)
+
     return _dict_to_multiagent_config(config_dict)
 
 

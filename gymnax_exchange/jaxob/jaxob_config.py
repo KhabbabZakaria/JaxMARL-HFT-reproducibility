@@ -26,6 +26,10 @@ class JAXLOB_Configuration:
     start_resolution: int = 6400  # Episodes from data start every n seconds.
     alphatradePath: str = os.path.expanduser("~")
     dataPath: str = os.path.expanduser("~")+"/data"
+    # Single ticker, or several as a comma-separated string ("AAPL,AMZN,GOOG") —
+    # LoadLOBSTER_resample splits on commas and pools the windows from every
+    # stock x timePeriod directory. Must stay a str: this config is passed as a
+    # static argument to jitted functions, so every field has to be hashable.
     stock: str = "AMZN"
     timePeriod: str = "2024_Dec" # Needs to be the appropriate directory name. 
 

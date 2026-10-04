@@ -1042,7 +1042,46 @@ def make_train(config):
                                 # Get agent short_name from config
                                 logging_dict[f"agent_{agent_name}/{key}_mean"] = float(np.mean(flat_value))
                                 logging_dict[f"agent_{agent_name}/{key}_std"] = float(np.std(flat_value))
-                    
+
+                    # Compact stdout view of whether this agent is actually trading.
+                    # Everything above only reaches wandb; these few numbers answer that
+                    # question straight from the terminal, whatever WANDB_MODE is set to.
+                    def agent_mean(key):
+                        return logging_dict.get(f"agent_{agent_name}/{key}_mean")
+
+                    # Keys below are the ones actually returned by each env's
+                    # update_state_and_get_done_and_info (a curated subset of the reward
+                    # dict, NOT every field the reward function computes). Each entry is
+                    # printed only if present, so neither agent type gates out the other.
+                    #   doom_quant   - qty the env force-liquidated at episode end;
+                    #                  approaching task_size means the agent never traded
+                    #   market_share - fraction of volume the MM actually captured
+                    stdout_fields = [
+                        ("doom", "doom_quant", "8.1f"),
+                        ("left", "quant_left", "8.1f"),
+                        ("inv", "inventory", "+8.2f"),
+                        ("mktshr", "market_share", "7.4f"),
+                        ("bidq", "bid_quant", "6.2f"),
+                        ("askq", "ask_quant", "6.2f"),
+                        ("pnl", "total_PnL", "+9.3f"),
+                    ]
+                    parts = []
+                    for label, key, fmt in stdout_fields:
+                        value = agent_mean(key)
+                        if value is not None:
+                            parts.append(f"{label}={value:{fmt}}")
+
+                    # Most-used discrete action: ~100% on one index means policy collapse.
+                    discrete_actions = {k.rsplit("_", 1)[-1]: v
+                                        for k, v in action_distribution.items()
+                                        if "/action_" in k and "dim" not in k}
+                    if discrete_actions:
+                        top_a, top_pct = max(discrete_actions.items(), key=lambda kv: kv[1])
+                        parts.append(f"top_action={top_a}({top_pct:.0f}%)")
+
+                    if parts:
+                        print(f"  [{agent_name:>3}] " + "  ".join(parts))
+
                     # Process world info if available
                     if 'world' in tr.info and tr.info['world']:
                         for key, value in tr.info['world'].items():
@@ -1131,7 +1170,11 @@ def make_train(config):
 
         checkpoint_dir=f'{config["world_config"]["alphatradePath"]}/checkpoints/MARLCheckpoints/{config["PROJECT"]}/{(run.name if run.name else run.id) if run else "GENERIC_RUN"}'
         orbax_checkpointer = oxcp.PyTreeCheckpointer()
-        options = oxcp.CheckpointManagerOptions(max_to_keep=2, create=True,keep_period=config["NUM_UPDATES"]//2)
+        # keep_period pins every Nth checkpoint permanently; max_to_keep holds the most
+        # recent few on top of those. Aim for ~25 pinned snapshots across the run so the
+        # policy's evolution stays inspectable, not just its endpoint.
+        keep_period = max(1, config["NUM_UPDATES"] // 25)
+        options = oxcp.CheckpointManagerOptions(max_to_keep=2, create=True,keep_period=keep_period)
         checkpoint_manager = oxcp.CheckpointManager(
              checkpoint_dir, orbax_checkpointer, options
                 )
