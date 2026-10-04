@@ -77,10 +77,12 @@ on seed 7; one ticker variant (`INTC,MSFT`). `SEED` propagates to both the learn
 and `world_config.seed`, so a seed change varies network init, action sampling, minibatch
 order, *and* the episode-window draw — a full end-to-end seed change, not just a weight init.
 
-**All comparisons below truncate every run to its first 975 updates**, because two runs were
-given 10⁷ steps and the rest 4×10⁶. Comparing final values across unequal budgets would
-confound seed with training length; this is the single most important methodological choice
-in the analysis and it changes the headline numbers substantially.
+**Every number reported below is measured over the first 975 updates of its run**, because
+two runs were given 10⁷ steps and the rest 4×10⁶. Comparing final values across unequal
+budgets would confound seed with training length; this is the single most important
+methodological choice in the analysis and it changes the headline numbers substantially.
+Where a figure plots a longer run in full, a dotted line marks update 975 so the measurement
+point stays visible.
 
 ---
 
@@ -152,7 +154,10 @@ Same code, same seed, same calendar day, same budget — only the ticker set cha
 | INTC, MSFT | −0.00002 | **−44** | +0.01 |
 
 The market maker is simply inert on INTC/MSFT: near-zero inventory, near-zero PnL, a flat
-reward curve. Measuring the raw book explains why:
+reward curve. These two runs are the same length as each other, so the figure plots them in
+full and the dotted line marks the 975-update budget the table values come from; the gap is
+present throughout and does not depend on where it is measured. Measuring the raw book
+explains why:
 
 | Ticker | Median mid | Median spread | Share of time at a 1-tick spread |
 |---|---:|---:|---:|
