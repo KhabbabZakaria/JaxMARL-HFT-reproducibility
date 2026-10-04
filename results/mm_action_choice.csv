@@ -1,0 +1,3 @@
+run,regime,top_action_mode,top_action_mode_share_pct,pct_updates_quoting_at_touch
+run_AAPL_AMZN_GOOG,"small-tick (AAPL,AMZN,GOOG)",0,100.0,100.0
+run_INTC_MSFT,"large-tick (INTC,MSFT)",3,45.4,0.0

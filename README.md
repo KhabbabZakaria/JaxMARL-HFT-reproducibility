@@ -29,6 +29,7 @@ figures behind those numbers.
 | [`results/summary_matched.csv`](results/summary_matched.csv) | Converged metrics, all runs truncated to a common budget |
 | [`results/seed_variance.csv`](results/seed_variance.csv) | Spread statistics across seeds |
 | [`results/spread_regime.csv`](results/spread_regime.csv) | Measured spread regime per ticker |
+| [`results/mm_action_choice.csv`](results/mm_action_choice.csv) | Where the market maker ends up quoting, per regime |
 | [`UPSTREAM_README.md`](UPSTREAM_README.md) | The original project's documentation (install, configs, agent types) |
 | [`.env.example`](.env.example) | Template for the machine-specific paths (copy to `.env`) |
 
@@ -58,7 +59,10 @@ Two agents trained jointly with IPPO (independent PPO, recurrent, separate netwo
 separate hyperparameters per agent type):
 
 - **Market maker (MM)** — posts a two-sided quote. Action space `fixed_quants`, reward
-  `spooner_asym_damped2`, quoting `spread_multiplier=3.0` ticks from mid, no inventory penalty.
+  `spooner_asym_damped2`, one share a side (`fixed_quant_value=1`), no inventory penalty. Each
+  of its 10 actions offsets the quote outward from the touch by a multiple of half the spread;
+  action 0 quotes at the touch. (`spread_multiplier` is set in the config but belongs to the
+  `spread_skew` action space and is unused here.)
 - **Execution agent (EXE)** — must execute a 600-unit parent order within the episode,
   direction drawn at random each episode. Action space `fixed_quants_complex` (13 actions),
   reward `normal`, `reward_lambda=0.1`. Whatever is unexecuted when the episode ends is
@@ -171,15 +175,23 @@ does not depend on where it is measured. Measuring the raw book explains why:
 | GOOG | 100 shares |
 | MSFT | **10,907 shares** |
 
-Two things close the gap, and they compound. The agent quotes a *fixed number of ticks* from
-mid (`spread_multiplier=3.0`, `multiplier_type='tick'`). On GOOG, whose book is 28 ticks
-wide, three ticks from mid is deep inside the spread and takes queue priority immediately.
-On MSFT, whose spread is at the one-tick minimum three quarters of the time, there is no
-room inside the spread to quote into at all. And the only remaining option — joining the
-touch — puts the agent's **one-share** order (`fixed_quant_value=1`) behind a median of
-10,907 shares already queued at that price, against 100 on the small-tick names. It
-essentially never reaches the front, so it essentially never fills: peak absolute inventory
-across the entire 2,440-update run was **0.22 shares**.
+The mechanism is queue position, and it is visible in the action the agent settles on. In
+the `fixed_quants` action space each action offsets the quote *outward from the touch* by a
+multiple of half the current spread — `bid_price = best_bid - bid_offset × half_spread` — so
+action 0 quotes exactly at the touch and every other action quotes behind it. No action
+quotes inside the spread. Quote size is `fixed_quant_value`, one share.
+
+On the small-tick names the agent finds this: by the end of training it plays **action 0 in
+100% of updates**, sitting at the touch behind a median of 100 resting shares, and it fills.
+On the large-tick names that same placement puts one share behind a median of **10,907**
+shares — a queue roughly 109× deeper — so it essentially never reaches the front and
+essentially never fills. With no fills, no action produces a distinguishable reward, the
+policy never converges at all, and it drifts among actions 1–3, which quote *behind* the
+touch and are worse still. It ends at **0% at-touch**. Peak absolute inventory across the
+entire 2,440-update run was **0.22 shares**.
+
+The one-tick spread is what identifies the regime; the depth resting at that single price is
+what does the damage.
 
 Measured against this study's own yardstick, the ticker effect is **2.1× the seed spread**
 in MM PnL (45,403 against 21,363), where the entropy sweep was 0.22× the seed spread in EXE
@@ -251,8 +263,10 @@ python analysis/extract_metrics.py     # results/raw_logs/*.gz -> results/metric
 python analysis/make_report.py         # -> summary_matched.csv, seed_variance.csv, figures/
 ```
 
-`analysis/spread_regime.py` additionally needs the raw LOBSTER books; its output is
-committed as `results/spread_regime.csv` so the finding is readable without them.
+`analysis/mm_action_choice.py` maps each action to where it places the quote and reports what
+each regime converged on. `analysis/spread_regime.py` additionally needs the raw LOBSTER
+books; its output is committed as `results/spread_regime.csv` so the finding is readable
+without them.
 
 ### A note on the raw logs
 
