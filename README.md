@@ -186,9 +186,11 @@ On the small-tick names the agent finds this: by the end of training it plays **
 On the large-tick names that same placement puts one share behind a median of **10,907**
 shares — a queue roughly 109× deeper — so it essentially never reaches the front and
 essentially never fills. With no fills, no action produces a distinguishable reward, the
-policy never converges at all, and it drifts among actions 1–3, which quote *behind* the
-touch and are worse still. It ends at **0% at-touch**. Peak absolute inventory across the
-entire 2,440-update run was **0.22 shares**.
+policy never converges at all, and it drifts among actions that quote *behind* the touch and
+are worse still. The drift is measurable: at update 975 the most-used actions are 3 and 2
+(45% and 43%), while by update 2,440 they are 8 and 1 (57% and 43%) — a mode that keeps
+moving is what a policy with no gradient looks like. At-touch stays at **0%** in both
+windows. Peak absolute inventory across the entire 2,440-update run was **0.22 shares**.
 
 The one-tick spread is what identifies the regime; the depth resting at that single price is
 what does the damage.
