@@ -200,7 +200,7 @@ but the gap is large enough and the mechanism concrete enough to carry it.
 
 The execution agent is unaffected: on INTC/MSFT it reaches **96.4% fill**, within a tenth of
 a point of the best run in the study (96.5%, seed 2 on the small-tick set). The large-tick
-data is not the problem; the market maker's tick-relative quote placement is.
+data is not the problem; the market maker's one-share quote against the resting queue is.
 
 So the configuration is not a neutral default — it is implicitly specialised to small-tick,
 high-priced names. A result demonstrated on AAPL/AMZN/GOOG says little about the same
@@ -217,8 +217,9 @@ in 2012 and sits in the same tick-constrained regime.)
 2. **Report task metrics, not only reward.** Shortfall and reward disagreed about which
    configuration was best. Reward alone would have selected the worse-executing agent.
 3. **Treat the instrument as a hyperparameter.** Ticker choice dominated every algorithmic
-   knob tested, through a concrete and checkable mechanism (tick-relative quote placement).
-   LOB-RL results should state the tick regime they were obtained in.
+   knob tested, through a concrete and checkable mechanism (queue position at the touch).
+   LOB-RL results should state the tick regime they were obtained in, and report depth ahead
+   of the agent's quote alongside fill rate.
 4. **Henderson et al.'s critique transfers, and tightens.** The seed problem is the same;
    the data-selection problem is additional, and specific to environments replayed from
    recorded markets.
